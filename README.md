@@ -4,6 +4,8 @@
 
 当前优先接入 **MCPMark Verified Filesystem**，后续是 AppWorld MCP 与 τ-bench text。Harbor / Terminal-Bench 适配保留为可选入口，需要具备容器能力的执行环境。
 
+接入代码正在真实环境中验证，尚未发布正式评测成绩。
+
 ## 接入方式
 
 ```text
@@ -82,6 +84,8 @@ uv run python -m varin_evals.mcpmark \
 ```
 
 `--tasks all` 跑所选套件的完整任务；`--suite standard` 使用标准集。每个任务仅有一次 attempt，使用原文件状态备份与重置机制，并保存 verifier 结果及最终文件。
+
+`--mcp-exposure deferred` 可选择 Varin 原有的按需发现与调用模式；默认 `direct` 披露准备好的 MCP 工具目录。所选模式写入 manifest，对比结果时保持连接模式一致。
 
 此赛道通过 Varin 原 Agent profile 将原生工具选择设为空，直接披露官方固定版本 `@modelcontextprotocol/server-filesystem@2025.12.18` 的 MCP 工具，保持 MCP 文件操作条件。任务输入只包含原始描述与工作目录，评分代码和答案保留在评测侧。模型、思考、重试及原生执行仍属于 Varin。完整系统开放工具的实验应另行命名和记录。
 

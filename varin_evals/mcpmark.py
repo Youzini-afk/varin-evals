@@ -36,7 +36,7 @@ def main(args) -> None:
         raise ValueError(f"No tasks matched {args.tasks!r}")
     manifest = {"benchmark": "MCPMark Verified Filesystem", "suite": args.suite, "sourceRevision": revision,
                 "model": config["model"], "tasks": [f"{task.category_id}/{task.task_id}" for task in tasks],
-                "attemptsPerTask": 1, "results": []}
+                "mcpExposure": args.mcp_exposure, "attemptsPerTask": 1, "results": []}
     (output / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     for task in tasks:
         task_dir = output / task.name
@@ -53,7 +53,7 @@ def main(args) -> None:
             selected["mcp"] = {"mcpServers": {"filesystem": {
                 "command": str(runtime / "bin/bun"),
                 "args": ["x", "@modelcontextprotocol/server-filesystem@2025.12.18", str(workspace)],
-                "exposure": "direct",
+                "exposure": args.mcp_exposure,
             }}}
             instruction = manager.get_task_instruction(task) + f"\n\nTest directory: {workspace}\nUse the connected filesystem MCP tools for file operations."
             phase = "execute"
@@ -103,4 +103,6 @@ if __name__ == "__main__":
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--suite", choices=["standard", "easy"], default="easy")
     parser.add_argument("--tasks", default="all")
+    parser.add_argument("--mcp-exposure", choices=["direct", "deferred"], default="direct",
+                        help="Use Varin's original direct catalog or on-demand MCP discovery/call mode")
     main(parser.parse_args())
