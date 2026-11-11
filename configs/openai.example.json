@@ -1,0 +1,14 @@
+{
+  "model": { "providerId": "eval", "modelId": "gpt-5.4", "thinkingLevel": "high" },
+  "models": {
+    "channels": [{
+      "id": "eval", "name": "Evaluation", "type": "openai", "enabled": true,
+      "baseUrl": "https://api.openai.com/v1",
+      "authentication": { "kind": "environment", "variable": "OPENAI_API_KEY" },
+      "parameters": {},
+      "models": [{ "id": "gpt-5.4", "name": "gpt-5.4", "enabled": true, "operations": ["chat"] }]
+    }]
+  },
+  "agentSettings": { "harness": { "permissions": { "mode": "bypass", "rules": [] } } },
+  "workFocus": "code"
+}

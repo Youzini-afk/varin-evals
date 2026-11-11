@@ -1,0 +1,23 @@
+{
+  "model": { "providerId": "eval", "modelId": "deepseek-v4.1-flash", "thinkingLevel": "high" },
+  "models": {
+    "channels": [{
+      "id": "eval", "name": "Private evaluation channel", "type": "openai-compatible", "enabled": true,
+      "baseUrl": "${VARIN_EVAL_BASE_URL}",
+      "authentication": { "kind": "environment", "variable": "VARIN_EVAL_API_KEY" },
+      "parameters": {},
+      "models": [{
+        "id": "deepseek-v4.1-flash", "name": "DeepSeek V4.1 Flash", "enabled": true,
+        "operations": ["chat"], "reasoning": true,
+        "thinking": { "mode": "levels", "levels": ["low", "high", "max"], "allowOff": true },
+        "thinkingLevelMap": { "high": "high" },
+        "compat": { "maxTokensField": "max_tokens", "thinkingFormat": "deepseek", "requiresReasoningContentOnAssistantMessages": true }
+      }]
+    }]
+  },
+  "agentSettings": {
+    "retry": { "enabled": true, "maxRetries": 2, "initialDelayMs": 1000, "maxDelayMs": 30000, "rules": [] },
+    "harness": { "permissions": { "mode": "bypass", "rules": [] } }
+  },
+  "workFocus": "general"
+}
