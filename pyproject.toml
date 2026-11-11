@@ -6,6 +6,9 @@ requires-python = ">=3.12"
 license = "AGPL-3.0-only"
 dependencies = ["harbor==0.25.0"]
 
+[project.optional-dependencies]
+research = ["requests>=2.31.0"]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

@@ -135,6 +135,20 @@ Varin 通过一个持续的原生会话接收客户消息。领域工具的原�
 
 三项主线完成后，继续原调研计划中具备运行条件的研究、办公和长期助手评测。新增 [FrontierHarness Eval](https://github.com/frontier-harness-eval/eval)：实际执行前固定源码与任务定义，核对隔离环境和 verifier。容器、VM、账号、数据访问或评分渠道确实缺失的项目，记录具体原因后跳过，不计作已完成的评测。
 
+下一项准备的是 DeepResearch Bench II。固定官方源码 `7c7a9a8cda9dad4e6728f4d6a89bb04541feb222`，当前有效范围为 130 题（官方暂时排除 112、114）。输入保留官方 `prompt`，包括禁止访问的参考来源说明；rubric 保留在评分端。Varin 使用原生 research 工作模式和完整辅助配置，将实际报告写到 `report.md`，缺失产物会明确记录。
+
+```sh
+uv sync --extra research
+uv run python -m varin_evals.deepresearch \
+  --source /path/to/DeepResearch-Bench-II --runtime artifacts/runtime \
+  --config configs/full.example.json \
+  --private-provider /path/outside/repo/provider.json \
+  --private-aux-provider /path/outside/repo/aux-provider.json \
+  --tasks all --output artifacts/deepresearch-001 --dry-run
+```
+
+本入口使用 DeepSeek 高思考作为自定义文本 judge，复用原 rubric、完整性检查及指标。另有一项显式评分解析修正：原 `_try_clean_and_load` 的引号修复正则会破坏合法 JSON，适配器将其替换为严格 `json.loads`，错误 JSON 仍由原评分重试处理。该项写入 manifest；judge 响应回执单独私有留存。当前仅完成无费用的原生写报告与原评分链验证，真实研究运行排在三项主线之后。
+
 ## 可选：运行 Terminal-Bench
 
 复制 `configs/openai.example.json` 为 `configs/run.local.json`，按实际模型填写渠道、模型和思考配置。渠道格式沿用 Varin 的 `models.json`；`agentSettings` 沿用其 `agent-settings.json`。密钥使用渠道的环境变量认证。例子中的 `bypass` 是无人值守任务的明确权限配置，OS、网络及文件隔离由评测环境负责。
