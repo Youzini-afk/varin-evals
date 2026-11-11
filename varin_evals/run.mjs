@@ -8,11 +8,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { privateValueRedactor, resolveConfiguration } from './configuration.mjs';
+import { exportNativeRecords, recordWriter, stopNativeHost } from './control.mjs';
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const terminal = new Set(['completed', 'failed', 'cancelled']);
 
-export async function runTrial({ runtime, config, instruction, workdir, output, keepHost = false, startupTimeout = 120 }) {
+export async function runTrial({ runtime, config, instruction, workdir, output, keepHost = false, startupTimeout = 120, onSession, signal }) {
   config = resolveConfiguration(config);
   const redact = privateValueRedactor(config);
   runtime = path.resolve(runtime);
@@ -57,20 +58,33 @@ export async function runTrial({ runtime, config, instruction, workdir, output, 
     }
     return response;
   };
-  const api = async (method, body) => (await request(`/api/threads/${method}`, body)).json();
-  const save = async (name, value) => {
-    await writeFile(path.join(rawDir, name), JSON.stringify(value, null, 2) + '\n', { mode: 0o600 });
-    await writeFile(path.join(output, name), JSON.stringify(redact(value), null, 2) + '\n');
+  const observedMethods = new Set(['run', 'snapshot', 'family/list', 'history/page', 'usage']);
+  const api = async (method, body) => {
+    const retries = config.agentSettings?.retry?.enabled === false ? 0 : (config.agentSettings?.retry?.maxRetries ?? 2);
+    for (let attempt = 0; ; attempt++) {
+      try { return await (await request(`/api/threads/${method}`, body)).json(); }
+      catch (error) {
+        const code = error.cause?.code ?? error.code;
+        if (!observedMethods.has(method) || attempt >= retries ||
+            !['ECONNRESET', 'ECONNREFUSED', 'EPIPE', 'ETIMEDOUT', 'UND_ERR_SOCKET'].includes(code)) throw error;
+        record.observationRetries.push({ method, code, attempt: attempt + 1, at: new Date().toISOString() });
+        await sleep(Math.min((config.agentSettings?.retry?.initialDelayMs ?? 1000) * 2 ** attempt,
+          config.agentSettings?.retry?.maxDelayMs ?? 30_000));
+      }
+    }
   };
+  const save = recordWriter(output, rawDir, redact);
   const start = Date.now();
   const record = { schemaVersion: 1, startedAt: new Date(start).toISOString(),
     configurationSha256: createHash('sha256').update(JSON.stringify(config)).digest('hex'),
     instructionSha256: createHash('sha256').update(instruction).digest('hex'),
-    model: config.model, workFocus: config.workFocus ?? 'code', outcome: 'preparing', exportErrors: [] };
+    model: config.model, workFocus: config.workFocus ?? 'code', outcome: 'preparing', exportErrors: [], observationRetries: [] };
   let receipt, identity, interrupted = false, exportsComplete = false;
   const interrupt = () => { interrupted = true; };
   process.on('SIGTERM', interrupt);
   process.on('SIGINT', interrupt);
+  signal?.addEventListener('abort', interrupt, { once: true });
+  if (signal?.aborted) interrupt();
   try {
     record.runtime = JSON.parse(await readFile(path.join(runtime, 'bundle.json'), 'utf8'));
     await save('run.json', record);
@@ -89,7 +103,7 @@ export async function runTrial({ runtime, config, instruction, workdir, output, 
       const profiles = await (await request('/api/agent-profiles/read', { runtime: 'agent' })).json();
       const saved = await (await request('/api/agent-profiles/save', { runtime: 'agent', expectedRevision: profiles.revision,
         config: { kind: 'custom', key: '', agent: { name: 'Benchmark', description: 'Benchmark tool configuration',
-          instructions: '', enabled: true, workFocus: [config.workFocus ?? 'general'] } }, tools: config.nativeTools })).json();
+          instructions: config.agentInstructions ?? '', enabled: true, workFocus: [config.workFocus ?? 'general'] } }, tools: config.nativeTools })).json();
       profileId = saved.profileId;
     }
     const key = randomUUID();
@@ -104,6 +118,9 @@ export async function runTrial({ runtime, config, instruction, workdir, output, 
     record.receipt = receipt;
     record.outcome = 'accepted';
     await save('run.json', record);
+    onSession?.({ api, request, identity, config, workdir, privateDir, redact, startedAtMs: start,
+      agent: { profileId, workFocus: config.workFocus ?? 'code' }, receipt,
+      stop: () => stopNativeHost({ host, hostExited, request }) });
     const states = createWriteStream(path.join(output, 'states.jsonl'));
     let previous;
     try {
@@ -123,78 +140,27 @@ export async function runTrial({ runtime, config, instruction, workdir, output, 
   } catch (error) {
     record.outcome = interrupted ? 'interrupted' : 'error';
     record.error = error.message;
-  } finally {
-    // A failed export remains a failed export; it never becomes an empty successful trace.
-    const collect = async (name, read) => {
-      try { const result = await read(); await save(name, result); return result; }
-      catch (error) { record.exportErrors.push({ file: name, error: error.message }); }
+    if (error.cause) record.errorCause = {
+      message: error.cause.message, code: error.cause.code, syscall: error.cause.syscall,
     };
+  } finally {
     if (identity) {
-      const snapshot = await collect('snapshot.json', () => api('snapshot', identity));
+      const snapshot = await exportNativeRecords({ api, request, identity, save, fromMs: start, errors: record.exportErrors });
       if (snapshot?.runFailure) record.failure = snapshot.runFailure;
-      if (snapshot) {
-        await collect('conversation.json', async () => (await request('/api/threads/export', { ...identity,
-          headId: snapshot.historyPage.head, format: 'json', includeTools: true, includeAttachments: false })).json());
-      }
-      const family = await collect('family.json', async () => {
-        const members = []; let cursor;
-        do {
-          const page = await api('family/list', { ...identity, includeSelf: true, ...(cursor ? { cursor } : {}) });
-          members.push(...page.members); cursor = page.nextCursor;
-        } while (cursor);
-        return { members };
-      });
-      if (family) await collect('histories.json', async () => {
-        const threads = [];
-        const targets = [{ identity, name: 'Varin', parentThreadId: null }];
-        for (const member of family.members) for (const branch of member.branches) targets.push({
-          identity: { runtime: 'agent', threadId: member.threadId, branchId: branch.branchId },
-          name: member.name, parentThreadId: member.parentThreadId,
-        });
-        const seen = new Set();
-        for (const participant of targets) {
-          const target = participant.identity;
-          const key = JSON.stringify(target);
-          if (seen.has(key)) continue;
-          seen.add(key);
-          const view = key === JSON.stringify(identity) && snapshot ? snapshot : await api('snapshot', target);
-          const items = [...view.history]; let previous = view.historyPage.previous;
-          while (previous) {
-            const page = await api('history/page', { ...target, headId: view.historyPage.head, beforeId: previous });
-            items.unshift(...page.items);
-            if (page.previous === previous) throw new Error('History cursor did not advance');
-            previous = page.previous;
-          }
-          threads.push({ ...participant, items });
-        }
-        return { root: identity, threads };
-      });
-      await collect('branch-usage.json', () => api('usage', identity));
-      await collect('usage.json', async () => (await request('/api/usage/summary', {
-        fromMs: start, toMs: Date.now() + 1, utcOffsetMinutes: 0,
-      })).json()); // Fresh Catalog: all models, child tasks, compaction and auxiliary calls.
       exportsComplete = record.exportErrors.length === 0;
     }
-    record.hostRetainedForVerifier = keepHost && record.outcome === 'completed';
-    if (record.hostRetainedForVerifier) {
+    record.hostRetained = keepHost && record.outcome === 'completed';
+    record.hostRetainedForVerifier = record.hostRetained && !onSession;
+    if (record.hostRetained) {
       host.unref();
     } else {
       try { if (receipt && !terminal.has(record.outcome)) await api('run/cancel', { runId: receipt.run_id }); }
       catch (error) { record.cancellationError = error.message; }
-      try { await request('/api/system/shutdown', {}); } catch { /* Process stop below is authoritative. */ }
-      let stopped = await Promise.race([hostExited, sleep(10_000).then(() => null)]);
-      if (!stopped) {
-        try { process.kill(-host.pid, 'SIGTERM'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
-        stopped = await Promise.race([hostExited, sleep(10_000).then(() => null)]);
-      }
-      if (!stopped) {
-        try { process.kill(-host.pid, 'SIGKILL'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
-        stopped = await hostExited;
-      }
-      record.hostExit = stopped;
+      record.hostExit = await stopNativeHost({ host, hostExited, request });
     }
     log.end();
     process.off('SIGTERM', interrupt); process.off('SIGINT', interrupt);
+    signal?.removeEventListener('abort', interrupt);
     record.finishedAt = new Date().toISOString();
     record.elapsedSeconds = (Date.now() - start) / 1000;
     record.exportsComplete = exportsComplete;

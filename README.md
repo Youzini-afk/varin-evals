@@ -2,9 +2,11 @@
 
 [Varin](https://github.com/Youzini-afk/Varin) 原生 Agent Harness 的公开评测接入。这里保存适配代码、可复现配置和实测记录；Varin 本身继续负责模型调用、工具、上下文、派发和耐久执行。
 
-当前优先接入 **MCPMark Verified Filesystem**，后续是 AppWorld MCP 与 τ-bench text。Harbor / Terminal-Bench 适配保留为可选入口，需要具备容器能力的执行环境。
+主线接入 **MCPMark Verified Filesystem、AppWorld MCP 与 τ-bench text**。Harbor / Terminal-Bench 适配保留为可选入口，需要具备容器能力的执行环境。
 
 接入代码正在真实环境中验证，尚未发布正式评测成绩。
+
+当前 MCP 实测使用带有本地记录的临时 Varin 0.9.44 运行副本，产品侧修复仍由 Varin 仓库处理。正式发布成绩时会明确运行产物、改动与配置；当前接线结果单独保留。
 
 ## 接入方式
 
@@ -92,6 +94,46 @@ uv run python -m varin_evals.mcpmark \
 `--mcp-exposure deferred` 可选择 Varin 原有的按需发现与调用模式；默认 `direct` 披露准备好的 MCP 工具目录。所选模式写入 manifest，对比结果时保持连接模式一致。
 
 此赛道通过 Varin 原 Agent profile 将原生工具选择设为空，直接披露官方固定版本 `@modelcontextprotocol/server-filesystem@2025.12.18` 的 MCP 工具，保持 MCP 文件操作条件。任务输入只包含原始描述与工作目录，评分代码和答案保留在评测侧。模型、思考、重试及原生执行仍属于 Varin。完整系统开放工具的实验应另行命名和记录。
+
+## 运行 AppWorld MCP
+
+固定官方 AppWorld 源码，在独立 Python 环境安装其 `mcp` extra，再按官方命令安装应用代码和下载数据。当前验证的源码提交为 `42b5bcf3cd334fee33f0c37c02070a9f5807add5`。该提交与新依赖存在实际兼容问题，本轮环境使用 `pydantic==2.12.5`、`fastapi==0.154.0`、`sqlalchemy==2.0.44`；原任务、应用与评分源码保持不变。运行环境的完整依赖列表随私有运行记录留存。
+
+```sh
+uv run python -m varin_evals.appworld \
+  --source /path/to/appworld --data-root /path/to/appworld-data \
+  --appworld-python /path/to/appworld/.venv/bin/python \
+  --runtime artifacts/runtime --config configs/full.example.json \
+  --private-provider /path/outside/repo/provider.json \
+  --private-aux-provider /path/outside/repo/aux-provider.json \
+  --split test_normal --tasks all --workers 1 \
+  --output artifacts/appworld-normal-001
+```
+
+先用 `--split dev --tasks <dev-task-id>` 验证接线，再分别完整运行 `test_normal`、`test_challenge`。每个 worker 拥有独立的官方 environment、API 与 MCP 服务，同一世界不并行运行任务。适配器调用官方 initialize、save、evaluate、close，最后用原 evaluator 汇总 TGC、SGC。工作目录不包含任务答案，Varin 通过 MCP 操作应用，原生文件和 shell 工具不开放。
+
+## 运行 τ-bench text
+
+当前目标是 τ-bench 2.0 的 `text-v1`：六语言、三领域、每组合 50 个冻结任务，共 900 个任务、每题一次。官方命令中的 preset 名为 `text`。源码固定在 `c06b07dd7c4d4ec61ba6ff9bcdf0b15dd7ef36d4`，在其独立 Python 环境安装项目及 `mcp==2.3.0`。跨平台传输应保留官方文件的 LF 字节；原 planner 会检查冻结任务、语言材料和运行规则的摘要。
+
+```sh
+PYTHONPATH=/path/to/varin-evals /path/to/tau2-bench/.venv/bin/python \
+  -m varin_evals.tau --source /path/to/tau2-bench \
+  --runtime artifacts/runtime --config configs/full.example.json \
+  --private-provider /path/outside/repo/provider.json \
+  --private-aux-provider /path/outside/repo/aux-provider.json \
+  --concurrency 1 --output artifacts/tau-text-001 --dry-run
+```
+
+去掉 `--dry-run` 开始实际运行；开发接线可另选 `--languages en --domains retail --num-tasks 1`，输出单独记录为部分任务。适配器复用原 planner 的冻结选择、原 orchestrator、用户模拟、环境状态与 reward；进程内使用官方 worker 线程，任务失败不自动重跑。模型请求的网络重试仍由 Varin 或官方模拟器负责；Host 的只读状态查询也会对连接中断重试，次数与退避采用配置值并保存回执。
+
+Varin 通过一个持续的原生会话接收客户消息。领域工具的原始 schema 通过 MCP 披露，调用逐个交给官方 orchestrator 执行，原结果回到尚在执行的原生 Run；下一个客户消息进入同一线程的新 Run。用户模拟器接收本轮完成后的最终回复，中间过程保留在原生历史里。完整用量使用 `native/.../native/session/usage.json` 的会话账本，逐轮导出为累计值，不能重复相加。
+
+本轮是明确的自定义模型配置：客户模拟器、语义通信判分和自然语言断言判分均使用指定的 DeepSeek、高思考。判分提示和规则保留官方实现；manifest 记录模型替换、工具传输方式及统计口径，与官方默认模型配置分开识别。官方 LiteLLM 对未知模型可能记录零费用，实际费用应以原账本和渠道计费为准。
+
+## 后续范围
+
+三项主线完成后，继续原调研计划中具备运行条件的研究、办公和长期助手评测。新增 [FrontierHarness Eval](https://github.com/frontier-harness-eval/eval)：实际执行前固定源码与任务定义，核对隔离环境和 verifier。容器、VM、账号、数据访问或评分渠道确实缺失的项目，记录具体原因后跳过，不计作已完成的评测。
 
 ## 可选：运行 Terminal-Bench
 

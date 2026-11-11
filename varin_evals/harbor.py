@@ -58,6 +58,7 @@ class VarinAgent(BaseInstalledAgent):
         await self.exec_as_root(environment, command="tar -xzf /installed-agent/varin-runtime.tgz -C /installed-agent/varin")
         await environment.upload_file(Path(__file__).with_name("run.mjs"), "/installed-agent/varin-run.mjs")
         await environment.upload_file(Path(__file__).with_name("configuration.mjs"), "/installed-agent/configuration.mjs")
+        await environment.upload_file(Path(__file__).with_name("control.mjs"), "/installed-agent/control.mjs")
         await self.exec_as_root(environment, command="/installed-agent/varin/bin/node --version")
 
     async def run(self, instruction: str, environment: BaseEnvironment, context: AgentContext) -> None:
