@@ -64,6 +64,10 @@ uv run python scripts/check_private_values.py --private-provider /path/outside/r
 
 模型重试使用 Varin 原生 `agentSettings.retry`：默认启用，失败后最多重试两次，起始等待 1 秒、指数退避上限 30 秒，遵守服务端 `Retry-After`。网络连接错误、流中断、408/409/425/429 与临时 5xx 按原策略处理。配置可调整次数、等待和规则。取消、撤权及认证失败按原执行语义结束。
 
+`configs/full.example.json` 配齐普通 LLM 辅助位：16 个 Harness 模型槽及标题等通用辅助请求使用同一 DeepSeek、高思考；嵌入使用 `Qwen/Qwen3-Embedding-0.6B`，typed decision 使用 `cloudflare/clef-flash`。功能启用状态沿产品原默认，配置模型本身不强制开启记忆组织、建议或自动选型。`--private-aux-provider` 读取仓库外另一份含 `baseUrl`、`apiKey` 的 JSON，注入 `VARIN_AUX_BASE_URL`、`VARIN_AUX_API_KEY`。决策接口按所选服务的实际协议配置，示例使用 `typesafe-system-one`。
+
+使用完整配置时，把前述配置路径换成 `configs/full.example.json` 并传入 `--private-aux-provider /path/outside/repo/aux-provider.json`。结果 manifest 保存实际模型绑定；隐私检查器的 `--private-provider` 可以同时传入两份私有文件。
+
 每次模型尝试独立留存回执和用量，已完成工具不随之后的模型请求重跑。评测适配器不根据判分自动重试整个任务。无费用 smoke 会注入 503 和工具执行后的流中断，再检查真实文件只追加一次。
 
 ## 运行 MCPMark Filesystem

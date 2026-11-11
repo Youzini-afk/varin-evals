@@ -1,0 +1,60 @@
+{
+  "model": { "providerId": "eval", "modelId": "deepseek-v4.1-flash", "thinkingLevel": "high" },
+  "models": {
+    "channels": [
+      {
+        "id": "eval", "name": "Private evaluation channel", "type": "openai-compatible", "enabled": true,
+        "baseUrl": "${VARIN_EVAL_BASE_URL}",
+        "authentication": { "kind": "environment", "variable": "VARIN_EVAL_API_KEY" },
+        "parameters": {},
+        "models": [{
+          "id": "deepseek-v4.1-flash", "name": "DeepSeek V4.1 Flash", "enabled": true,
+          "operations": ["chat"], "reasoning": true,
+          "thinking": { "mode": "levels", "levels": ["low", "high", "max"], "allowOff": true },
+          "thinkingLevelMap": { "high": "high" },
+          "compat": { "maxTokensField": "max_tokens", "thinkingFormat": "deepseek", "requiresReasoningContentOnAssistantMessages": true }
+        }]
+      },
+      {
+        "id": "aux", "name": "Private auxiliary inference channel", "type": "openai-compatible", "enabled": true,
+        "baseUrl": "${VARIN_AUX_BASE_URL}",
+        "authentication": { "kind": "environment", "variable": "VARIN_AUX_API_KEY" },
+        "parameters": {},
+        "models": [
+          { "id": "Qwen/Qwen3-Embedding-0.6B", "name": "Qwen3 Embedding 0.6B", "enabled": true, "operations": ["embedding"] },
+          { "id": "cloudflare/clef-flash", "name": "Clef Flash", "enabled": true, "operations": ["decision"], "decision": { "api": "typesafe-system-one" } }
+        ]
+      }
+    ]
+  },
+  "agentSettings": {
+    "defaultProvider": "eval", "defaultModel": "deepseek-v4.1-flash", "defaultThinkingLevel": "high",
+    "utilityModel": { "providerId": "eval", "modelId": "deepseek-v4.1-flash" }, "utilityThinkingLevel": "high",
+    "retry": { "enabled": true, "maxRetries": 2, "initialDelayMs": 1000, "maxDelayMs": 30000, "rules": [] },
+    "harness": {
+      "permissions": { "mode": "bypass", "rules": [] },
+      "delegationModelSelection": { "enabled": false, "model": { "providerId": "eval", "modelId": "deepseek-v4.1-flash" }, "thinkingLevel": "high" },
+      "models": {
+        "agentPlanning": { "providerId": "eval", "modelId": "deepseek-v4.1-flash", "agent": { "modelSettings": { "thinkingLevel": "high" } } },
+        "contextCompaction": { "providerId": "eval", "modelId": "deepseek-v4.1-flash", "agent": { "modelSettings": { "thinkingLevel": "high" } } },
+        "explore": { "providerId": "eval", "modelId": "deepseek-v4.1-flash", "agent": { "modelSettings": { "thinkingLevel": "high" } } },
+        "retrievalAgent": { "providerId": "eval", "modelId": "deepseek-v4.1-flash", "agent": { "modelSettings": { "thinkingLevel": "high" } } },
+        "researchPeer": { "providerId": "eval", "modelId": "deepseek-v4.1-flash", "agent": { "modelSettings": { "thinkingLevel": "high" } } },
+        "worker": { "providerId": "eval", "modelId": "deepseek-v4.1-flash", "agent": { "modelSettings": { "thinkingLevel": "high" } } },
+        "verifier": { "providerId": "eval", "modelId": "deepseek-v4.1-flash", "agent": { "modelSettings": { "thinkingLevel": "high" } } },
+        "reader": { "providerId": "eval", "modelId": "deepseek-v4.1-flash", "agent": { "modelSettings": { "thinkingLevel": "high" } } },
+        "webSelection": { "providerId": "eval", "modelId": "deepseek-v4.1-flash", "agent": { "modelSettings": { "thinkingLevel": "high" } } },
+        "nextStep": { "providerId": "eval", "modelId": "deepseek-v4.1-flash", "agent": { "modelSettings": { "thinkingLevel": "high" } } },
+        "permissionJudge": { "providerId": "eval", "modelId": "deepseek-v4.1-flash", "agent": { "modelSettings": { "thinkingLevel": "high" } } },
+        "researchInvestigation": { "providerId": "eval", "modelId": "deepseek-v4.1-flash", "agent": { "modelSettings": { "thinkingLevel": "high" } } },
+        "researchExperimentalDesign": { "providerId": "eval", "modelId": "deepseek-v4.1-flash", "agent": { "modelSettings": { "thinkingLevel": "high" } } },
+        "researchFastExploration": { "providerId": "eval", "modelId": "deepseek-v4.1-flash", "agent": { "modelSettings": { "thinkingLevel": "high" } } },
+        "researchHighThroughputExecution": { "providerId": "eval", "modelId": "deepseek-v4.1-flash", "agent": { "modelSettings": { "thinkingLevel": "high" } } },
+        "memoryOrganizer": { "providerId": "eval", "modelId": "deepseek-v4.1-flash", "agent": { "modelSettings": { "thinkingLevel": "high" } } }
+      },
+      "embedding": { "protocol": "openai-compatible", "providerId": "aux", "modelId": "Qwen/Qwen3-Embedding-0.6B", "dimensions": 1024 },
+      "fastDecision": { "default": { "protocol": "typed-classifier", "providerId": "aux", "modelId": "cloudflare/clef-flash" } }
+    }
+  },
+  "workFocus": "general"
+}

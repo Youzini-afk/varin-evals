@@ -2,12 +2,13 @@
 import argparse
 from dataclasses import asdict
 import json
-import os
 import shutil
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
+
+from .configuration import load_configuration, model_bindings
 
 
 def main(args) -> None:
@@ -18,15 +19,7 @@ def main(args) -> None:
     runtime = args.runtime.resolve(strict=True)
     output = args.output.resolve()
     output.mkdir()  # Every invocation is a distinct experiment, never an implicit re-attempt.
-    config = json.loads(args.config.read_text())
-    environment = dict(os.environ)
-    if args.private_provider:
-        private = json.loads(args.private_provider.read_text())
-        environment["VARIN_EVAL_BASE_URL"] = private["baseUrl"]
-        environment["VARIN_EVAL_API_KEY"] = private["apiKey"]
-        config["model"]["modelId"] = private["model"]
-        config["models"]["channels"][0]["models"][0]["id"] = private["model"]
-        config["model"]["thinkingLevel"] = private.get("thinkingLevel", config["model"].get("thinkingLevel"))
+    config, environment = load_configuration(args.config, args.private_provider, args.private_aux_provider)
     revision = subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], text=True).strip()
     if subprocess.check_output(["git", "-C", str(source), "status", "--porcelain", "--untracked-files=no"], text=True).strip():
         raise ValueError("MCPMark source has tracked edits; preserve and record the official task and verifier revision")
@@ -35,7 +28,8 @@ def main(args) -> None:
     if not tasks:
         raise ValueError(f"No tasks matched {args.tasks!r}")
     manifest = {"benchmark": "MCPMark Verified Filesystem", "suite": args.suite, "sourceRevision": revision,
-                "model": config["model"], "tasks": [f"{task.category_id}/{task.task_id}" for task in tasks],
+                "model": config["model"], "modelBindings": model_bindings(config),
+                "tasks": [f"{task.category_id}/{task.task_id}" for task in tasks],
                 "mcpExposure": args.mcp_exposure, "attemptsPerTask": 1, "results": []}
     (output / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     for task in tasks:
@@ -100,6 +94,7 @@ if __name__ == "__main__":
     parser.add_argument("--runtime", required=True, type=Path)
     parser.add_argument("--config", required=True, type=Path)
     parser.add_argument("--private-provider", type=Path)
+    parser.add_argument("--private-aux-provider", type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--suite", choices=["standard", "easy"], default="easy")
     parser.add_argument("--tasks", default="all")

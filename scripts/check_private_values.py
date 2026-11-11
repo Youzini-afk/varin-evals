@@ -6,11 +6,13 @@ import subprocess
 from urllib.parse import urlsplit
 
 parser = argparse.ArgumentParser(description=__doc__)
-parser.add_argument("--private-provider", required=True, type=Path)
+parser.add_argument("--private-provider", required=True, type=Path, nargs="+")
 args = parser.parse_args()
-private = json.loads(args.private_provider.read_text())
-url = urlsplit(private["baseUrl"])
-values = {private["apiKey"].encode(), private["baseUrl"].encode(), url.netloc.encode()}
+values = set()
+for provider_path in args.private_provider:
+    private = json.loads(provider_path.read_text())
+    url = urlsplit(private["baseUrl"])
+    values.update({private["apiKey"].encode(), private["baseUrl"].encode(), url.netloc.encode()})
 files = subprocess.check_output(["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"]).split(b"\0")
 leaks = []
 for name in set(files) - {b""}:
