@@ -79,7 +79,8 @@ export async function runTrial({ runtime, config, instruction, workdir, output, 
     configurationSha256: createHash('sha256').update(JSON.stringify(config)).digest('hex'),
     instructionSha256: createHash('sha256').update(instruction).digest('hex'),
     model: config.model, workFocus: config.workFocus ?? 'code', outcome: 'preparing', exportErrors: [], observationRetries: [] };
-  let receipt, identity, interrupted = false, exportsComplete = false;
+  if (config.evaluationTransport) record.evaluationTransport = config.evaluationTransport;
+  let receipt, identity, interrupted = false, exportsComplete = false, sessionHandedOff = false;
   const interrupt = () => { interrupted = true; };
   process.on('SIGTERM', interrupt);
   process.on('SIGINT', interrupt);
@@ -121,6 +122,7 @@ export async function runTrial({ runtime, config, instruction, workdir, output, 
     onSession?.({ api, request, identity, config, workdir, privateDir, redact, startedAtMs: start,
       agent: { profileId, workFocus: config.workFocus ?? 'code' }, receipt,
       stop: () => stopNativeHost({ host, hostExited, request }) });
+    sessionHandedOff = Boolean(onSession);
     const states = createWriteStream(path.join(output, 'states.jsonl'));
     let previous;
     try {
@@ -133,7 +135,6 @@ export async function runTrial({ runtime, config, instruction, workdir, output, 
           previous = run.state;
         }
         if (terminal.has(run.state)) { record.outcome = run.state; break; }
-        if (interrupted) { record.outcome = 'cancellation_requested'; break; }
         await sleep(1000);
       }
     } finally { await new Promise(resolve => states.end(resolve)); }
@@ -149,7 +150,9 @@ export async function runTrial({ runtime, config, instruction, workdir, output, 
       if (snapshot?.runFailure) record.failure = snapshot.runFailure;
       exportsComplete = record.exportErrors.length === 0;
     }
-    record.hostRetained = keepHost && record.outcome === 'completed';
+    // A persistent session owns final exports and Host shutdown after handoff,
+    // including when its first turn fails or is cancelled.
+    record.hostRetained = keepHost && (record.outcome === 'completed' || sessionHandedOff);
     record.hostRetainedForVerifier = record.hostRetained && !onSession;
     if (record.hostRetained) {
       host.unref();

@@ -102,6 +102,7 @@ async function closeSession() {
   const record = { model: session.config.model, runtime, outcome: 'session_closed', turns: turn,
     startedAt: new Date(session.startedAtMs).toISOString(), finishedAt: new Date().toISOString(),
     exportsComplete: errors.length === 0, exportErrors: errors, hostExit: stopped, usageScope: 'whole_session' };
+  if (session.config.evaluationTransport) record.evaluationTransport = session.config.evaluationTransport;
   await save('run.json', record);
   return { kind: 'closed', exportsComplete: record.exportsComplete, hostExit: stopped };
 }

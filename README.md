@@ -129,6 +129,8 @@ PYTHONPATH=/path/to/varin-evals /path/to/tau2-bench/.venv/bin/python \
 
 Varin 通过一个持续的原生会话接收客户消息。领域工具的原始 schema 通过 MCP 披露，调用逐个交给官方 orchestrator 执行，原结果回到尚在执行的原生 Run；下一个客户消息进入同一线程的新 Run。用户模拟器接收本轮完成后的最终回复，中间过程保留在原生历史里。完整用量使用 `native/.../native/session/usage.json` 的会话账本，逐轮导出为累计值，不能重复相加。
 
+会话层在首轮受理后拥有最终导出和 Host 关闭责任，首轮失败或取消也走同一收尾；取消后等待原生终态，再记录实际退出。
+
 本轮是明确的自定义模型配置：客户模拟器、语义通信判分和自然语言断言判分均使用指定的 DeepSeek、高思考。判分提示和规则保留官方实现；manifest 记录模型替换、工具传输方式及统计口径，与官方默认模型配置分开识别。官方 LiteLLM 对未知模型可能记录零费用，实际费用应以原账本和渠道计费为准。
 
 ## 后续范围
@@ -170,6 +172,12 @@ uv run harbor run \
 官方资料：[Harbor 自定义 Agent](https://docs.harborframework.com/agents/custom-agents)、[TB2.1 说明](https://www.tbench.ai/news/terminal-bench-2-1)、[榜单规则](https://github.com/harbor-framework/terminal-bench-2-1/blob/main/leaderboard/SUBMIT.md)。截至 2026-11-12，TB2.1 社区提交关闭，由维护者运行的结果才进入官方榜单。本仓库先公开项目实测及可复现证据。
 
 ## 结果与执行语义
+
+MCPMark 和 AppWorld 可用 `--continue-from <旧运行目录>` 接续到新的 `--output`。已经记录的结果全部保留，包括正常执行但判分失败的题；确有接入故障需要重跑时，用 `--retry-tasks <逗号分隔的任务 ID>` 明确选择。原运行目录保留，manifest 记录继承与重跑来源。AppWorld 另需新的 `--experiment`，会复制官方已保存的任务状态，让原 evaluator 汇总完整选题。
+
+τ-bench 的 `--continue-from` 将官方 frame、plan 和检查点复制到新输出目录，续跑仍由原 checkpoint 逻辑负责：保留普通终态，仅重新执行 `infrastructure_error` 和未完成任务。旧原生轨迹通过来源路径关联。接续时检查任务版本与模型绑定，官方 planner 继续检查冻结 frame 和配置。
+
+若私有渠道配置声明 `evaluationTransport`，原生执行记录会保留该传输调整说明及实现哈希。渠道地址、认证和请求内容仍由私有配置与原始私有记录管理。实际规范化或人工处理应随结果说明，不能将修改后的运行环境描述为原版。
 
 每个 trial 的 `agent/varin/` 包含：
 

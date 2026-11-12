@@ -12,6 +12,8 @@ def load_configuration(path: Path, private_provider: Path | None = None,
         private = json.loads(private_provider.read_text())
         environment["VARIN_EVAL_BASE_URL"] = private["baseUrl"]
         environment["VARIN_EVAL_API_KEY"] = private["apiKey"]
+        if "evaluationTransport" in private:
+            config["evaluationTransport"] = private["evaluationTransport"]
         previous = config["model"]
         provider_id, previous_model = previous["providerId"], previous["modelId"]
         model_id = private["model"]

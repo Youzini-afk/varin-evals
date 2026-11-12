@@ -9,6 +9,7 @@ import sys
 import tempfile
 
 from .configuration import load_configuration, model_bindings
+from .continuation import continue_results
 
 
 def main(args) -> None:
@@ -31,6 +32,11 @@ def main(args) -> None:
                 "model": config["model"], "modelBindings": model_bindings(config),
                 "tasks": [f"{task.category_id}/{task.task_id}" for task in tasks],
                 "mcpExposure": args.mcp_exposure, "attemptsPerTask": 1, "results": []}
+    manifest['results'], continuation = continue_results(args.continue_from, args.retry_tasks, manifest)
+    if continuation:
+        manifest['continuation'] = continuation
+    retained = {row['task'] for row in manifest['results']}
+    tasks = [task for task in tasks if f'{task.category_id}/{task.task_id}' not in retained]
     (output / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     for task in tasks:
         task_dir = output / task.name
@@ -85,7 +91,7 @@ def main(args) -> None:
         finally:
             state.clean_up(task)
             (output / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
-    print(json.dumps({"tasks": len(tasks), "passed": sum(row["verifierPassed"] for row in manifest["results"])}))
+    print(json.dumps({"tasks": len(manifest['tasks']), "executed": len(tasks), "passed": sum(row["verifierPassed"] for row in manifest["results"])}))
 
 
 if __name__ == "__main__":
@@ -98,6 +104,8 @@ if __name__ == "__main__":
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--suite", choices=["standard", "easy"], default="easy")
     parser.add_argument("--tasks", default="all")
+    parser.add_argument("--continue-from", type=Path)
+    parser.add_argument("--retry-tasks", default='', help="Explicit comma-separated task IDs; preserves other terminal outcomes")
     parser.add_argument("--mcp-exposure", choices=["direct", "deferred"], default="direct",
                         help="Use Varin's original direct catalog or on-demand MCP discovery/call mode")
     main(parser.parse_args())

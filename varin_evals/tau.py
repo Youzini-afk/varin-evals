@@ -2,6 +2,7 @@
 import argparse
 import json
 import os
+import shutil
 from pathlib import Path
 
 from .configuration import load_configuration, model_bindings
@@ -43,6 +44,25 @@ def main(args):
                           additional_stop_tool_names=additional_stop_tool_names)
 
     registry.register_agent_factory(factory, name="varin")
+    continuation = None
+    if args.continue_from:
+        previous = args.continue_from.resolve(strict=True)
+        old = json.loads((previous / 'manifest.json').read_text())
+        if old['sourceRevision'] != source_revision(source) or old['modelBindings'] != model_bindings(config):
+            raise ValueError('Continuation changes task revision or model bindings')
+        continuation = {'from': str(previous), 'nativeArtifactsFrom': str(previous / 'native'),
+                        'policy': 'Official checkpoint resume: retry infrastructure_error, retain other terminal outcomes'}
+        if not args.dry_run:
+            output.mkdir(parents=True)
+            for name in ['benchmark-frame.json', 'benchmark-plan.json']:
+                shutil.copy2(previous / name, output / name)
+            old_plan = json.loads((previous / 'benchmark-plan.json').read_text())
+            for cell in old_plan['configs']:
+                name = f"{cell['language']}-{cell['domain']}"
+                checkpoint = previous / name / 'results.json'
+                if checkpoint.exists():
+                    (output / name).mkdir()
+                    shutil.copy2(checkpoint, output / name / 'results.json')
     template = TextRunConfig(agent="varin", llm_agent=model, llm_args_agent={},
         llm_user=model, llm_args_user=llm_args, num_trials=1, workers=0,
         max_concurrency=args.concurrency, max_retries=0, verbose_logs=False,
@@ -67,6 +87,8 @@ def main(args):
             "nativeToolCalls": "delivered individually in execution order; official orchestrator executes effects",
             "usage": "native session ledger is authoritative; upstream unknown model costs may be zero"},
         "attemptsPerTask": 1, "partial": plan.partial, "cells": []}
+    if continuation:
+        manifest['continuation'] = continuation
     current_cell = [""]
     try:
         for cell in plan.configs:
@@ -93,5 +115,6 @@ if __name__ == "__main__":
     parser.add_argument("--domains")
     parser.add_argument("--num-tasks", type=int)
     parser.add_argument("--concurrency", type=int, default=1)
+    parser.add_argument("--continue-from", type=Path)
     parser.add_argument("--dry-run", action="store_true")
     main(parser.parse_args())

@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import signal
+import shutil
 import socket
 import subprocess
 import tempfile
@@ -14,6 +15,7 @@ from urllib.request import Request, urlopen
 
 from .configuration import load_configuration, model_bindings
 from .sources import source_revision
+from .continuation import continue_results
 
 
 def free_port() -> int:
@@ -60,6 +62,20 @@ def main(args) -> None:
                 "modelBindings": model_bindings(config), "experiment": experiment, "tasks": task_ids,
                 "taskProtocol": "Official function-calling prompt sections A/B/C; original scaffold turn limit omitted",
                 "attemptsPerTask": 1, "mcpExposure": args.mcp_exposure, "results": []}
+    manifest['results'], continuation = continue_results(args.continue_from, args.retry_tasks, manifest)
+    if continuation:
+        manifest['continuation'] = continuation
+        old = json.loads((args.continue_from.resolve() / 'manifest.json').read_text())
+        if old['experiment'] == experiment:
+            raise ValueError('Continuation requires a new AppWorld experiment to preserve old state')
+        # Keep the original owner's saved task databases intact; its evaluator
+        # reads the same immutable valid state under the new experiment name.
+        home = data_root / 'experiments/outputs'
+        for row in manifest['results']:
+            shutil.copytree(home / old['experiment'] / 'tasks' / row['task'],
+                            home / experiment / 'tasks' / row['task'])
+    retained = {row['task'] for row in manifest['results']}
+    pending_ids = [task_id for task_id in task_ids if task_id not in retained]
     lock = threading.Lock()
 
     def save_manifest():
@@ -170,7 +186,7 @@ def main(args) -> None:
             server_record_path.write_text(json.dumps(server_record, indent=2) + "\n")
 
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
-        futures = [pool.submit(worker, index, task_ids[index::args.workers]) for index in range(args.workers)]
+        futures = [pool.submit(worker, index, pending_ids[index::args.workers]) for index in range(args.workers)]
         for future in futures:
             future.result()
     # The original evaluator owns TGC and SGC over the selected task list.
@@ -193,6 +209,8 @@ if __name__ == "__main__":
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--split", default="test_normal")
     parser.add_argument("--tasks", default="all")
+    parser.add_argument("--continue-from", type=Path)
+    parser.add_argument("--retry-tasks", default='', help="Explicit comma-separated task IDs; preserves other terminal outcomes")
     parser.add_argument("--experiment")
     parser.add_argument("--workers", type=int, default=1)
     parser.add_argument("--mcp-exposure", choices=["direct", "deferred"], default="deferred")
