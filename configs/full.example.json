@@ -3,7 +3,7 @@
   "models": {
     "channels": [
       {
-        "id": "eval", "name": "Private evaluation channel", "type": "openai-compatible", "enabled": true,
+        "id": "eval", "name": "Private evaluation channel", "type": "openai", "enabled": true,
         "baseUrl": "${VARIN_EVAL_BASE_URL}",
         "authentication": { "kind": "environment", "variable": "VARIN_EVAL_API_KEY" },
         "parameters": {},
@@ -11,8 +11,7 @@
           "id": "deepseek-v4.1-flash", "name": "DeepSeek V4.1 Flash", "enabled": true,
           "operations": ["chat"], "reasoning": true,
           "thinking": { "mode": "levels", "levels": ["low", "high", "max"], "allowOff": true },
-          "thinkingLevelMap": { "high": "high" },
-          "compat": { "maxTokensField": "max_tokens", "thinkingFormat": "deepseek", "requiresReasoningContentOnAssistantMessages": true }
+          "thinkingLevelMap": { "high": "high" }
         }]
       },
       {
