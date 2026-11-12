@@ -77,6 +77,7 @@ def main(args) -> None:
     retained = {row['task'] for row in manifest['results']}
     pending_ids = [task_id for task_id in task_ids if task_id not in retained]
     lock = threading.Lock()
+    admission_paused = threading.Event()
 
     def save_manifest():
         (output / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
@@ -118,6 +119,8 @@ def main(args) -> None:
             server_record["state"] = "ready"
             server_record_path.write_text(json.dumps(server_record, indent=2) + "\n")
             for task_id in tasks:
+                if admission_paused.is_set():
+                    break
                 task_dir = output / task_id
                 task_dir.mkdir()
                 workdir = task_dir / "workspace"
@@ -149,6 +152,8 @@ def main(args) -> None:
                                                     "--output", str(task_dir / "agent")],
                                                    env=environment, capture_output=True, text=True)
                     row["agentCompleted"] = completed.returncode == 0
+                    if not row['agentCompleted']:
+                        admission_paused.set()
                     phase = "save"
                     control(base, "/save", {"task_id": task_id})
                     phase = "verify"
@@ -161,6 +166,7 @@ def main(args) -> None:
                         trajectory = export_trajectory(task_dir / "agent")
                         (task_dir / "trajectory.json").write_text(trajectory.model_dump_json(indent=2))
                 except Exception as error:
+                    admission_paused.set()
                     failure = {"phase": phase, "error": str(error)}
                     (task_dir / "adapter-error.json").write_text(json.dumps(failure, indent=2) + "\n")
                     row["adapterError"] = failure
@@ -169,6 +175,7 @@ def main(args) -> None:
                         try:
                             control(base, "/close", {"task_id": task_id})
                         except Exception as error:
+                            admission_paused.set()
                             row["cleanupError"] = str(error)
                     with lock:
                         manifest["results"].append(row)
@@ -189,6 +196,8 @@ def main(args) -> None:
         futures = [pool.submit(worker, index, pending_ids[index::args.workers]) for index in range(args.workers)]
         for future in futures:
             future.result()
+    if admission_paused.is_set():
+        raise RuntimeError('Batch paused after an execution or adapter failure; in-flight tasks finalized. Diagnose before continuing.')
     # The original evaluator owns TGC and SGC over the selected task list.
     scores = sdk_json(python, data_root,
                       "from appworld.evaluator import evaluate_tasks; import sys,json; print(json.dumps(evaluate_tasks(json.loads(sys.argv[1]), sys.argv[2], include_details=True)))",

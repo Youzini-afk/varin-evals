@@ -74,6 +74,8 @@ uv run python scripts/check_private_values.py --private-provider /path/outside/r
 
 每次模型尝试独立留存回执和用量，已完成工具不随之后的模型请求重跑。评测适配器不根据判分自动重试整个任务。无费用 smoke 会注入 503 和工具执行后的流中断，再检查真实文件只追加一次。
 
+Filesystem 和 AppWorld 批次遇到执行或适配器故障时暂停接题；AppWorld 已在执行的其他世界仍完成保存、原判分与关闭。部分批次保留逐题结果，接续时用 `--continue-from` 和明确的 `--retry-tasks` 补跑已查明的接入故障。正常执行但未通过判分的题保留，也不会触发暂停；AppWorld 仅在所选任务全部收尾后生成总分。
+
 ## 运行 MCPMark Filesystem
 
 先克隆官方源码并固定提交。适配器只导入原任务与状态管理器，不启动其内置模型循环；所需 Python 基础依赖已包含在当前环境中。首次任务准备会按原 owner 下载官方文件环境。

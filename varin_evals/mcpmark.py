@@ -91,6 +91,8 @@ def main(args) -> None:
         finally:
             state.clean_up(task)
             (output / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+        if not manifest['results'][-1]['agentCompleted'] or manifest['results'][-1].get('exportError'):
+            raise RuntimeError('Batch paused after an execution or export failure; task state and verifier result preserved. Diagnose before continuing.')
     print(json.dumps({"tasks": len(manifest['tasks']), "executed": len(tasks), "passed": sum(row["verifierPassed"] for row in manifest["results"])}))
 
 
